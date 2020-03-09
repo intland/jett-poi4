@@ -3,7 +3,7 @@ package net.sf.jett.expression;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.commons.jexl2.JexlEngine;
+import org.apache.commons.jexl3.*;
 
 /**
  * <p>An <code>ExpressionFactory</code> is a factory class that
@@ -22,9 +22,11 @@ import org.apache.commons.jexl2.JexlEngine;
  */
 public class ExpressionFactory
 {
-    private JexlEngine myEngine;
-    private Map<String, Object> myFuncs;
-    private Map<String, org.apache.commons.jexl2.Expression> myExpressionCache;
+    private JexlEngine myEngine = null;
+    private JexlBuilder builder = new JexlBuilder();
+
+    private Map<String, Object> myFuncs = new HashMap();
+    private Map<String, org.apache.commons.jexl3.JexlExpression> myExpressionCache = new HashMap();
 
     /**
      * Constructs a <code>ExpressionFactory</code>.  Initializes an internal
@@ -32,15 +34,21 @@ public class ExpressionFactory
      */
     public ExpressionFactory()
     {
-        myEngine = new JexlEngine();
-        myEngine.setLenient(true);
-        myEngine.setSilent(false);
-        myEngine.setDebug(false);
-        myFuncs = new HashMap<>();
-        myEngine.setFunctions(myFuncs);
+        //myEngine = new JexlEngine();
+        builder.silent(false);
+        builder.debug(false);
+        builder.strict(false);
+//        myEngine.setLenient(true);
+//        myEngine.setSilent(false);
+//        myEngine.setDebug(false);
+//        myFuncs = new HashMap<>();
+//        myEngine.setFunctions(myFuncs);
+        builder.namespaces(myFuncs);
         myFuncs.put("jagg", JaggFuncs.class);
         myFuncs.put("jett", JettFuncs.class);
-        myExpressionCache = new HashMap<>();
+//        myExpressionCache = new HashMap<>();
+
+//        myEngine = builder.create();    // TODO: engine should be reinitialized if the properties change !
     }
 
     /**
@@ -51,7 +59,8 @@ public class ExpressionFactory
      */
     public void setLenient(boolean lenient)
     {
-        myEngine.setLenient(lenient);
+        builder.strict(! lenient);
+        //myEngine.setLenient(lenient);
     }
 
     /**
@@ -61,7 +70,8 @@ public class ExpressionFactory
      */
     public boolean isLenient()
     {
-        return myEngine.isLenient();
+        return !builder.strict();
+        //return myEngine.isLenient();
     }
 
     /**
@@ -72,7 +82,8 @@ public class ExpressionFactory
      */
     public void setSilent(boolean silent)
     {
-        myEngine.setSilent(silent);
+        builder.silent(silent);
+        //myEngine.setSilent(silent);
     }
 
     /**
@@ -82,7 +93,8 @@ public class ExpressionFactory
      */
     public boolean isSilent()
     {
-        return myEngine.isSilent();
+        return builder.silent();
+//        return myEngine.isSilent();
     }
 
     /**
@@ -92,7 +104,8 @@ public class ExpressionFactory
      */
     public void setCache(int size)
     {
-        myEngine.setCache(size);
+        builder.cache(size);
+        //myEngine.setCache(size);
     }
 
     /**
@@ -104,7 +117,8 @@ public class ExpressionFactory
      */
     public void setDebug(boolean debug)
     {
-        myEngine.setDebug(debug);
+        builder.debug(debug);
+        //myEngine.setDebug(debug);
     }
 
     /**
@@ -134,11 +148,12 @@ public class ExpressionFactory
      * @param expression The expression as a <code>String</code>.
      * @return A JEXL <code>Expression</code>.
      */
-    public org.apache.commons.jexl2.Expression createExpression(String expression)
+    public org.apache.commons.jexl3.JexlExpression createExpression(String expression)
     {
-        org.apache.commons.jexl2.Expression jexlExpr = myExpressionCache.get(expression);
+        JexlExpression jexlExpr = myExpressionCache.get(expression);
         if (jexlExpr == null)
         {
+            myEngine = builder.create();    // TODO: cache engine?
             jexlExpr = myEngine.createExpression(expression);
             myExpressionCache.put(expression, jexlExpr);
         }

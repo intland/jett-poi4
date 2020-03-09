@@ -9,15 +9,19 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.commons.jexl2.JexlContext;
-import org.apache.commons.jexl2.parser.ASTIdentifier;
-import org.apache.commons.jexl2.parser.ASTMethodNode;
-import org.apache.commons.jexl2.parser.ASTNumberLiteral;
-import org.apache.commons.jexl2.parser.ASTReference;
-import org.apache.commons.jexl2.parser.ASTSizeMethod;
-import org.apache.commons.jexl2.parser.Node;
-import org.apache.commons.jexl2.parser.Parser;
-import org.apache.commons.jexl2.parser.SimpleNode;
+import org.apache.commons.jexl3.JexlContext;
+import org.apache.commons.jexl3.JexlInfo;
+import org.apache.commons.jexl3.internal.Scope;
+import org.apache.commons.jexl3.parser.ASTIdentifier;
+import org.apache.commons.jexl3.parser.ASTIdentifierAccess;
+import org.apache.commons.jexl3.parser.ASTMethodNode;
+import org.apache.commons.jexl3.parser.ASTNumberLiteral;
+import org.apache.commons.jexl3.parser.ASTReference;
+import org.apache.commons.jexl3.parser.ASTSizeMethod;
+import org.apache.commons.jexl3.parser.JexlNode;
+import org.apache.commons.jexl3.parser.Node;
+import org.apache.commons.jexl3.parser.Parser;
+import org.apache.commons.jexl3.parser.SimpleNode;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
 import org.apache.poi.ss.usermodel.CreationHelper;
@@ -116,6 +120,32 @@ public class Expression
         return references;
     }
 
+    private String getNodeName(JexlNode node) {
+        String name = getIdentifierName(node);
+        if (name == null) {
+           // name = String.valueOf(node.jjtGetValue());
+           name = null;
+        }
+        return name;
+    }
+
+    /**
+     * If the node is an identifier node like {@link ASTIdentifier} then return its identifier name, or null if not an identifier
+     * @param node
+     * @return
+     */
+    private String getIdentifierName(JexlNode node) {
+        String name = null;
+        if (node instanceof ASTIdentifier) {
+            ASTIdentifier id = (ASTIdentifier) node;
+            name = id.getName();
+        } else if (node instanceof ASTIdentifierAccess) {
+            ASTIdentifierAccess access = (ASTIdentifierAccess) node;
+            name = access.getName();
+        }
+        return name;
+    }
+
     /**
      * Determine if any substring starting at the beginning of the given
      * <code>ASTReference</code> evaluates to a <code>Collection</code>.  If so,
@@ -140,23 +170,23 @@ public class Expression
         String collectionName = null;
         for (int i = 0; i < count; i++)
         {
-            Node child = node.jjtGetChild(i);
-            if (child instanceof ASTIdentifier)
-            {
-                ASTIdentifier identifier = (ASTIdentifier) child;
+            final JexlNode child = node.jjtGetChild(i);
+            final String identifierName = getIdentifierName(child);
 
+            if (identifierName != null)
+            {
                 if (collectionName == null)
-                    collectionName = identifier.image;
+                    collectionName = identifierName;
                 else
-                    collectionName = collectionName + "." + identifier.image;
+                    collectionName = collectionName + "." + identifierName;
                 logger.debug("    fCN: Test Expr ({}/{}): \"{}\".",
                         i, count, collectionName);
 
                 // Turn off implicit collection processing on a per-collection name
                 // basis.
-                if (noImplProcCollNames.contains(identifier.image))
+                if (noImplProcCollNames.contains(identifierName))
                 {
-                    logger.trace("    fCN: Skipping because {} has been turned off.", identifier.image);
+                    logger.trace("    fCN: Skipping because {} has been turned off.", identifierName);
                     continue;
                 }
 
@@ -174,13 +204,13 @@ public class Expression
                     // commonly expected to be called on Collections.
                     if (i < count - 1)
                     {
-                        Node nextChild = node.jjtGetChild(i + 1);
+                        JexlNode nextChild = node.jjtGetChild(i + 1);
                         if (nextChild instanceof ASTMethodNode)
                         {
                             ASTMethodNode methodNode = (ASTMethodNode) nextChild;
                             if (logger.isDebugEnabled())
                             {
-                                logger.debug("      fCN: method.image = {}", methodNode.image);
+                                logger.debug("      fCN: method.image = {}", getNodeName(methodNode));
                                 logger.debug("      fCN: method.toString = {}", methodNode.toString());
                                 int numChildren = methodNode.jjtGetNumChildren();
                                 logger.debug("      fCN: method.jjtGetNumChildren = {}", numChildren);
@@ -192,30 +222,31 @@ public class Expression
                                     if (methodChild instanceof ASTIdentifier)
                                     {
                                         ASTIdentifier childIdentifier = (ASTIdentifier) methodChild;
-                                        logger.debug("  child image = \"{}\".", childIdentifier.image);
+                                        logger.debug("  child image = \"{}\".", getNodeName(childIdentifier));
                                     }
                                 }
                             }
                             // First child should be the identifier (name) of the method.
-                            ASTIdentifier childIdentifier = (ASTIdentifier) methodNode.jjtGetChild(0);
-                            if (childIdentifier.image != null &&
-                                    (childIdentifier.image.startsWith("capacity") ||
-                                            childIdentifier.image.startsWith("contains") ||
-                                            childIdentifier.image.startsWith("element") ||
-                                            childIdentifier.image.startsWith("equals") ||
-                                            childIdentifier.image.equals("get") ||  // Don't cover getter methods that may return Collections
-                                            childIdentifier.image.startsWith("hashCode") ||
-                                            childIdentifier.image.startsWith("indexOf") ||
-                                            childIdentifier.image.startsWith("isEmpty") ||
-                                            childIdentifier.image.startsWith("lastIndexOf") ||
-                                            childIdentifier.image.startsWith("size") ||
-                                            childIdentifier.image.startsWith("toString")
+                            JexlNode childIdentifier = methodNode.jjtGetChild(0);
+                            String childName = getNodeName(childIdentifier);
+                            if (childName != null &&
+                                    (childName.startsWith("capacity") ||
+                                            childName.startsWith("contains") ||
+                                            childName.startsWith("element") ||
+                                            childName.startsWith("equals") ||
+                                            childName.equals("get") ||  // Don't cover getter methods that may return Collections
+                                            childName.startsWith("hashCode") ||
+                                            childName.startsWith("indexOf") ||
+                                            childName.startsWith("isEmpty") ||
+                                            childName.startsWith("lastIndexOf") ||
+                                            childName.startsWith("size") ||
+                                            childName.startsWith("toString")
                                     )
                                     )
                             {
                                 // Continue on to the next child (if any).
                                 logger.trace("      fCN: Skipping {} because of child method name {}",
-                                        collectionName, childIdentifier.image);
+                                        collectionName, childName);
                                 continue;
                             }
                         }
@@ -225,14 +256,14 @@ public class Expression
                             // ".size()", but "ASTSizeMethod" is NOT a
                             // "ASTMethodNode", so this check is needed!
                             logger.trace("      fCN: sizeMethod.image = {}",
-                                    ((ASTSizeMethod) nextChild).image);
+                                    getNodeName((ASTSizeMethod) nextChild));
                             continue;
                         }
-                        else if (nextChild instanceof ASTNumberLiteral)
+                        else if (isNumberLiteral(nextChild))
                         {
                             // JEXL allows ".n" to access an element of a List.
                             logger.trace("      fCN: numberLiteral.image = {}",
-                                    ((ASTNumberLiteral) nextChild).image);
+                                    getNodeName(nextChild));
                             continue;
                         }
                         else
@@ -254,6 +285,22 @@ public class Expression
             }
         }
         return null;
+    }
+
+    private boolean isNumberLiteral(JexlNode node) {
+        if (node instanceof ASTNumberLiteral) {
+            return true;
+        }
+        String identifier = getIdentifierName(node);
+        // if this not an identifier just a number like "myCollection.0" ?
+        try {
+            if (identifier != null && Integer.valueOf(identifier) != null) {
+                return true;
+            }
+        } catch (NumberFormatException ex) {
+            // just checked if this is an integer ?
+        }
+        return false;
     }
 
     /**
@@ -284,7 +331,10 @@ public class Expression
         Parser parser = new Parser(new StringReader(";"));
         try
         {
-            SimpleNode tree = parser.parse(new StringReader(expression), null);
+            JexlInfo info = new JexlInfo(expression, 0, 0);
+            Scope scope = new Scope(null, new String[0]);
+            SimpleNode tree = parser.parse(info, expression, scope, true, true);
+            //SimpleNode tree = parser.parse(new StringReader(expression), null);
             List<ASTReference> references = findReferences(tree);
             for (ASTReference node : references)
             {
@@ -298,7 +348,7 @@ public class Expression
                 }
             }
         }
-        catch (org.apache.commons.jexl2.parser.ParseException e)
+        catch (Exception e)
         {
             throw new ParseException("JEXL ParseException caught on expression \"" + expression + "\": " + e.getMessage(), e);
         }
